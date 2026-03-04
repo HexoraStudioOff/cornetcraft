@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CornetCraft</title>
+  <style>
+    @font-face {
+      font-family: 'MinecraftFont';
+      src: local('Courier New');
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    /* UI Overlay */
+    #ui-overlay {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; z-index: 10;
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px; height: 24px;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute;
+      background: rgba(255,255,255,0.8);
+    }
+    #crosshair::before { width: 2px; height: 24px; top: 0; left: 50%; transform: translateX(-50%); }
+    #crosshair::after { width: 24px; height: 2px; top: 50%; left: 0; transform: translateY(-50%); }
+
+    /* Debug Info */
+    #debug-info {
+      position: absolute; top: 10px; left: 10px;
+      color: #fff; font-size: 13px; line-height: 1.5;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    /* HUD Bottom Container */
+    #hud-bottom {
+      position: absolute; bottom: 8px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column;
+      align-items: center; gap: 2px;
+    }
+
+    /* Bars above hotbar */
+    #bars-container {
+      width: 364px;
+      display: flex; justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 2px;
+    }
+
+    /* Health Bar */
+    #health-bar {
+      display: flex; gap: 0px;
+      flex-direction: row;
+    }
+    .heart-icon {
+      width: 18px; height: 18px;
+      image-rendering: pixelated;
+    }
+
+    /* Hunger Bar */
+    #hunger-bar {
+      display: flex; gap: 0px;
+      flex-direction: row;
+    }
+    .hunger-icon {
+      width: 18px; height: 18px;
+      image-rendering: pixelated;
+    }
+
+    /* XP Bar */
+    #xp-bar {
+      width: 364px; height: 5px;
+      background: #2a2a2a;
+      border: 1px solid #1a1a1a;
+      margin-bottom: 2px;
+    }
+    .xp-fill {
+      height: 100%; width: 0%;
+      background: #7dff3a;
+    }
+
+    /* Hotbar */
+    #hotbar {
+      display: flex; gap: 2px;
+      background: rgba(0,0,0,0.45);
+      padding: 2px;
+      border: 2px solid rgba(40,40,40,0.8);
+    }
+    .hotbar-slot {
+      width: 40px; height: 40px;
+      border: 2px solid #1a1a1a;
+      background: rgba(80,80,80,0.5);
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .hotbar-slot.active {
+      border-color: #e8e8e8;
+      background: rgba(255,255,255,0.15);
+    }
+    .slot-number {
+      position: absolute; top: 1px; left: 2px;
+      color: rgba(255,255,255,0.5);
+      font-size: 9px; z-index: 2;
+    }
+    .slot-item {
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .slot-item canvas, .item-icon {
+      width: 32px; height: 32px;
+      image-rendering: pixelated;
+    }
+    .slot-count {
+      position: absolute; bottom: 1px; right: 2px;
+      color: #fff; font-size: 10px;
+      text-shadow: 1px 1px 1px #000;
+      z-index: 2;
+    }
+
+    /* ========== Minecraft Main Menu ========== */
+    #start-screen {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: transparent;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 100; color: #fff;
+      user-select: none;
+    }
+
+    /* Title container */
+    .mc-title-wrap {
+      position: relative;
+      margin-bottom: 4px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .mc-title {
+      font-family: 'Courier New', monospace;
+      font-size: 72px; font-weight: bold;
+      letter-spacing: 6px;
+      color: #e0e0e0;
+      text-shadow:
+        3px 3px 0 #3f3f3f,
+        6px 6px 0 #2a2a2a,
+        0 0 20px rgba(0,0,0,0.6),
+        0 0 40px rgba(0,0,0,0.3);
+      line-height: 1;
+      padding: 0 10px;
+    }
+    .mc-subtitle {
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      letter-spacing: 8px;
+      color: #cccccc;
+      text-shadow: 2px 2px 0 #333;
+      margin-top: 2px;
+    }
+
+    /* Splash text */
+    .mc-splash {
+      position: absolute;
+      right: -40px; top: 50px;
+      color: #FFFF00;
+      font-family: 'Courier New', monospace;
+      font-size: 18px; font-weight: bold;
+      transform: rotate(-20deg);
+      text-shadow: 2px 2px 0 #3a3a00, 0 0 10px rgba(255,255,0,0.3);
+      white-space: nowrap;
+      animation: splashBounce 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes splashBounce {
+      0%, 100% { transform: rotate(-20deg) scale(1); }
+      50% { transform: rotate(-20deg) scale(1.12); }
+    }
+
+    /* Menu buttons container */
+    .mc-menu-buttons {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+      margin-top: 24px;
+    }
+    .mc-menu-row {
+      display: flex; gap: 6px;
+    }
+
+    /* Minecraft-style buttons */
+    .mc-btn {
+      height: 40px;
+      min-width: 200px;
+      background: linear-gradient(to bottom, #838383 0%, #6f6f6f 40%, #5c5c5c 60%, #505050 100%);
+      border: 2px solid #000;
+      border-top-color: #a8a8a8; border-left-color: #a8a8a8;
+      border-bottom-color: #404040; border-right-color: #404040;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      text-shadow: 2px 2px 0 #2a2a2a;
+      padding: 0 16px;
+      position: relative;
+      outline: none;
+      transition: none;
+    }
+    .mc-btn:hover {
+      background: linear-gradient(to bottom, #6a7fc9 0%, #5a6db8 40%, #4e60a8 60%, #4558a0 100%);
+      border-top-color: #8898d8; border-left-color: #8898d8;
+      border-bottom-color: #303878; border-right-color: #303878;
+      color: #ffffa0;
+    }
+    .mc-btn:active {
+      background: linear-gradient(to bottom, #4e60a8 0%, #4558a0 40%, #3a4a90 60%, #303878 100%);
+      border-top-color: #303878; border-left-color: #303878;
+      border-bottom-color: #8898d8; border-right-color: #8898d8;
+    }
+    .mc-btn.wide { width: 400px; }
+    .mc-btn.half { width: 197px; }
+    .mc-btn.disabled {
+      background: linear-gradient(to bottom, #484848 0%, #404040 40%, #383838 60%, #303030 100%);
+      border-top-color: #5a5a5a; border-left-color: #5a5a5a;
+      border-bottom-color: #252525; border-right-color: #252525;
+      color: #707070;
+      cursor: not-allowed;
+      text-shadow: 1px 1px 0 #1a1a1a;
+    }
+    .mc-btn.disabled:hover {
+      background: linear-gradient(to bottom, #484848 0%, #404040 40%, #383838 60%, #303030 100%);
+      border-top-color: #5a5a5a; border-left-color: #5a5a5a;
+      border-bottom-color: #252525; border-right-color: #252525;
+      color: #707070;
+    }
+
+    /* Footer */
+    .mc-footer {
+      position: absolute;
+      bottom: 8px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #aaa;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+      pointer-events: none;
+    }
+
+    /* Seed display in menu */
+    .mc-seed {
+      font-size: 12px;
+      color: #88ff88;
+      letter-spacing: 1px;
+      margin-top: 12px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    /* Pause Menu */
+    #pause-menu {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.65);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 90; gap: 8px;
+    }
+    .mc-button {
+      width: 280px; height: 40px;
+      background: #737373; border: 2px solid #000;
+      color: #fff; font-family: 'Courier New', monospace;
+      font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+      border-top-color: #a0a0a0; border-left-color: #a0a0a0;
+      border-bottom-color: #505050; border-right-color: #505050;
+      pointer-events: auto;
+    }
+    .mc-button:hover {
+      background: #8a8aff;
+      border-top-color: #b0b0ff; border-left-color: #b0b0ff;
+      border-bottom-color: #5050c0; border-right-color: #5050c0;
+    }
+    .pause-title {
+      color: #fff; font-size: 24px;
+      margin-bottom: 16px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+
+    /* Inventory Screen */
+    #inventory-screen {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.65);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 80;
+      pointer-events: auto;
+    }
+    #inventory-panel {
+      background: #c6c6c6;
+      border: 4px solid #000;
+      border-top-color: #dbdbdb; border-left-color: #dbdbdb;
+      border-bottom-color: #555; border-right-color: #555;
+      padding: 8px;
+      display: flex; flex-direction: column;
+      gap: 4px; position: relative;
+      min-width: 352px;
+    }
+    .inv-title {
+      color: #404040; font-size: 14px;
+      margin-bottom: 2px;
+    }
+    .inv-row {
+      display: flex; flex-direction: row;
+      gap: 2px;
+    }
+    .inv-top {
+      display: flex; flex-direction: row;
+      gap: 12px; margin-bottom: 4px;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .inv-slot {
+      width: 36px; height: 36px;
+      background: #8b8b8b;
+      border: 2px solid #000;
+      border-top-color: #555; border-left-color: #555;
+      border-bottom-color: #fff; border-right-color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: pointer;
+      pointer-events: auto;
+    }
+    .inv-slot:hover { background: #a0a0c0; }
+    .inv-slot .item-icon {
+      width: 28px; height: 28px;
+      image-rendering: pixelated;
+    }
+    .inv-slot .inv-count {
+      position: absolute; bottom: 0; right: 1px;
+      color: #fff; font-size: 10px;
+      text-shadow: 1px 1px 1px #000;
+      pointer-events: none;
+    }
+    .crafting-area {
+      display: flex; flex-direction: row;
+      align-items: center; gap: 8px;
+    }
+    .crafting-grid {
+      display: grid; gap: 2px;
+    }
+    .crafting-arrow {
+      font-size: 24px; color: #404040;
+    }
+    .craft-result .inv-slot {
+      width: 44px; height: 44px;
+      background: #c6a040;
+      border-color: #504020;
+    }
+    .inv-separator {
+      height: 2px; background: #555;
+      margin: 4px 0;
+    }
+    .player-model-container {
+      width: 56px; height: 80px;
+      background: #555;
+      border: 2px solid #333;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    #player-model-canvas {
+      width: 52px; height: 76px;
+      image-rendering: auto;
+    }
+
+    /* Cursor item (follows mouse) */
+    #cursor-item {
+      position: fixed;
+      pointer-events: none;
+      z-index: 200;
+      display: none;
+    }
+    #cursor-item canvas {
+      width: 28px; height: 28px;
+      image-rendering: pixelated;
+    }
+    #cursor-item .cursor-count {
+      position: absolute; bottom: -2px; right: -2px;
+      color: #fff; font-size: 10px;
+      text-shadow: 1px 1px 1px #000;
+    }
+
+    /* Options Menu */
+    #options-overlay {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 95;
+      pointer-events: auto;
+    }
+    #options-panel {
+      background: #c6c6c6;
+      border: 4px solid #000;
+      border-top-color: #dbdbdb; border-left-color: #dbdbdb;
+      border-bottom-color: #555; border-right-color: #555;
+      padding: 12px 16px;
+      min-width: 420px;
+      max-width: 480px;
+      max-height: 85vh;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+    }
+    .opt-title {
+      font-size: 18px; font-weight: bold;
+      color: #404040;
+      text-align: center;
+      margin-bottom: 8px;
+      text-shadow: 1px 1px 0 #fff;
+    }
+    .opt-tab-bar {
+      display: flex; gap: 4px;
+      margin-bottom: 10px;
+      justify-content: center;
+    }
+    .opt-tab {
+      padding: 5px 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      background: #737373;
+      border: 2px solid #000;
+      border-top-color: #a0a0a0; border-left-color: #a0a0a0;
+      border-bottom-color: #505050; border-right-color: #505050;
+      color: #e0e0e0; cursor: pointer;
+      text-shadow: 1px 1px 1px #333;
+    }
+    .opt-tab:hover {
+      background: #8a8aff;
+      color: #ffffa0;
+    }
+    .opt-tab.active {
+      background: #5a6db8;
+      border-top-color: #8898d8; border-left-color: #8898d8;
+      border-bottom-color: #303878; border-right-color: #303878;
+      color: #ffffa0;
+    }
+    .opt-content {
+      margin-bottom: 10px;
+    }
+    .opt-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid #aaa;
+    }
+    .opt-label {
+      font-size: 13px;
+      color: #404040;
+      flex-shrink: 0;
+      min-width: 130px;
+    }
+    .opt-slider-wrap {
+      display: flex; align-items: center; gap: 8px;
+      flex: 1;
+      justify-content: flex-end;
+    }
+    .opt-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 150px; height: 8px;
+      background: #8b8b8b;
+      border: 2px solid #555;
+      border-top-color: #555; border-left-color: #555;
+      border-bottom-color: #ddd; border-right-color: #ddd;
+      outline: none;
+      cursor: pointer;
+    }
+    .opt-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px; height: 16px;
+      background: #e0e0e0;
+      border: 2px solid #000;
+      border-top-color: #fff; border-left-color: #fff;
+      border-bottom-color: #606060; border-right-color: #606060;
+      cursor: pointer;
+    }
+    .opt-slider::-moz-range-thumb {
+      width: 12px; height: 16px;
+      background: #e0e0e0;
+      border: 2px solid #000;
+      border-top-color: #fff; border-left-color: #fff;
+      border-bottom-color: #606060; border-right-color: #606060;
+      cursor: pointer;
+    }
+    .opt-value {
+      font-size: 12px; color: #404040;
+      min-width: 55px; text-align: right;
+    }
+    .opt-toggle {
+      padding: 4px 18px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: #6a3030;
+      border: 2px solid #000;
+      border-top-color: #904040; border-left-color: #904040;
+      border-bottom-color: #401818; border-right-color: #401818;
+      color: #ff8888; cursor: pointer;
+      min-width: 60px;
+      text-align: center;
+    }
+    .opt-toggle.on {
+      background: #306a30;
+      border-top-color: #409040; border-left-color: #409040;
+      border-bottom-color: #184018; border-right-color: #184018;
+      color: #88ff88;
+    }
+    .opt-toggle:hover {
+      filter: brightness(1.15);
+    }
+    .opt-done-btn {
+      width: 100%;
+      padding: 8px 0;
+      font-family: 'Courier New', monospace;
+      font-size: 15px;
+      background: linear-gradient(to bottom, #838383, #5c5c5c);
+      border: 2px solid #000;
+      border-top-color: #a8a8a8; border-left-color: #a8a8a8;
+      border-bottom-color: #404040; border-right-color: #404040;
+      color: #e0e0e0; cursor: pointer;
+      text-shadow: 1px 1px 1px #333;
+      margin-top: 6px;
+    }
+    .opt-done-btn:hover {
+      background: linear-gradient(to bottom, #6a7fc9, #4558a0);
+      border-top-color: #8898d8; border-left-color: #8898d8;
+      border-bottom-color: #303878; border-right-color: #303878;
+      color: #ffffa0;
+    }
+    .opt-key-section { margin-top: 4px; }
+    .opt-keybind-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      border-bottom: 1px solid #bbb;
+    }
+    .opt-action {
+      font-size: 12px; color: #404040;
+    }
+    .opt-key {
+      font-size: 11px;
+      background: #8b8b8b;
+      border: 1px solid #555;
+      border-bottom-color: #ddd; border-right-color: #ddd;
+      padding: 1px 8px;
+      color: #fff;
+      text-shadow: 1px 1px 0 #333;
+    }
+  </style>
+</head>
+<body>
+  <div id="start-screen">
+    <div class="mc-title-wrap">
+      <div class="mc-title">CORNETCRAFT</div>
+      <div class="mc-subtitle">WEB EDITION</div>
+      <div class="mc-splash" id="splash-text">Procedurally generated!</div>
+    </div>
+
+    <div class="mc-menu-buttons">
+      <button class="mc-btn wide" id="btn-play">▶️ Jouer</button>
+      <button class="mc-btn wide disabled" id="btn-multi">Multijoueur (soon...)</button>
+      <div style="height: 8px;"></div>
+      <div class="mc-menu-row">
+        <button class="mc-btn half" id="btn-menu-options">⚙️ Options...</button>
+        <button class="mc-btn half" id="btn-menu-quit">❌ Quitter</button>
+      </div>
+    </div>
+
+    <div class="mc-seed" id="seed-display"></div>
+
+    <div class="mc-footer">
+      <span>CornetCraft v1.0 (Seed: <span id="footer-seed"></span>)</span>
+      <span>Made with ❤️</span>
+    </div>
+  </div>
+
+  <div id="pause-menu">
+    <div class="pause-title">Game Menu</div>
+    <button class="mc-button" id="btn-resume">▶️ Back to Game</button>
+    <button class="mc-button" id="btn-options">⚙️ Options...</button>
+    <button class="mc-button" id="btn-quit">❌ Quit</button>
+  </div>
+
+  <div id="inventory-screen"></div>
+
+  <div id="cursor-item">
+    <div class="cursor-count"></div>
+  </div>
+
+  <div id="ui-overlay">
+    <div id="crosshair"></div>
+    <div id="debug-info"></div>
+    <div id="hud-bottom">
+      <div id="bars-container">
+        <div id="health-bar"></div>
+        <div id="hunger-bar"></div>
+      </div>
+      <div id="xp-bar"><div class="xp-fill"></div></div>
+      <div id="hotbar"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
