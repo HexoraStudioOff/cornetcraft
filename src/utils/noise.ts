@@ -10,15 +10,46 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Generate a random seed from URL param or Math.random */
+/** Generate a stable seed from URL param, or create one and persist it */
 function getWorldSeed(): number {
   const params = new URLSearchParams(window.location.search);
-  const seedParam = params.get('seed');
+  const seedParam = params.get("seed");
+
+  // 1) If seed is in URL, use it
   if (seedParam !== null) {
     const parsed = parseInt(seedParam, 10);
-    if (!isNaN(parsed)) return parsed;
+    if (!isNaN(parsed)) {
+      // also store as fallback
+      try { localStorage.setItem("cornetcraft_seed", String(parsed)); } catch {}
+      return parsed;
+    }
   }
-  return Math.floor(Math.random() * 2147483647);
+
+  // 2) Fallback: try localStorage
+  const saved = (() => {
+    try { return localStorage.getItem("cornetcraft_seed"); } catch { return null; }
+  })();
+
+  if (saved) {
+    const parsed = parseInt(saved, 10);
+    if (!isNaN(parsed)) {
+      params.set("seed", String(parsed));
+      const newUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", newUrl);
+      return parsed;
+    }
+  }
+
+  // 3) Otherwise create a new seed and persist in URL + localStorage
+  const newSeed = Math.floor(Math.random() * 2147483647);
+
+  try { localStorage.setItem("cornetcraft_seed", String(newSeed)); } catch {}
+
+  params.set("seed", String(newSeed));
+  const newUrl = `${window.location.pathname}?${params.toString()}${window.location.hash || ""}`;
+  window.history.replaceState({}, "", newUrl);
+
+  return newSeed;
 }
 
 /** Current world seed — exported so UI can display it */

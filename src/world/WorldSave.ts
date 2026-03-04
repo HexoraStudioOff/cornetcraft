@@ -58,34 +58,39 @@ export class WorldSave {
    * we store per-block keys and then filter. This is fine for small/moderate numbers of edits.
    * If you expect huge edits, we can optimize with another store keyed by chunk.
    */
-  async getChunkDeltas(cx: number, cz: number): Promise<Array<{ wx: number; wy: number; wz: number; t: BlockType }>> {
-    const db = await getDb();
-    const out: Array<{ wx: number; wy: number; wz: number; t: BlockType }> = [];
-    const prefix = `${this.seed}:`;
+    async getChunkDeltas(cx: number, cz: number): Promise<Array<{ wx: number; wy: number; wz: number; t: BlockType }>> {
+        const db = await getDb();
+        const out: Array<{ wx: number; wy: number; wz: number; t: BlockType }> = [];
+        const prefix = `${this.seed}:`;
 
-    // Iterate all keys in the store and filter by chunk.
-    // For performance later: we can move to a chunk-indexed store.
-    let cursor = await db.transaction('blocks').store.openCursor();
-    while (cursor) {
-      const k = String(cursor.key);
-      if (k.startsWith(prefix)) {
-        const rest = k.slice(prefix.length);
-        const [pos] = rest.split(':'); // safety if future format changes
-        const [xs, ys, zs] = pos.split(',');
-        const wx = Number(xs), wy = Number(ys), wz = Number(zs);
-        if (!Number.isNaN(wx) && !Number.isNaN(wy) && !Number.isNaN(wz)) {
-          const ccx = worldToChunk(Math.floor(wx), CHUNK_SIZE);
-          const ccz = worldToChunk(Math.floor(wz), CHUNK_SIZE);
-          if (ccx === cx && ccz === cz) {
-            const v = cursor.value as BlockDelta;
-            out.push({ wx, wy, wz, t: v.t as BlockType });
-          }
+        const tx = db.transaction('blocks', 'readonly');
+        let cursor = await tx.store.openCursor();
+
+        while (cursor) {
+            const k = String(cursor.key);
+            if (k.startsWith(prefix)) {
+            const rest = k.slice(prefix.length); // "wx,wy,wz"
+            const parts = rest.split(',');
+            if (parts.length === 3) {
+                const wx = Number(parts[0]);
+                const wy = Number(parts[1]);
+                const wz = Number(parts[2]);
+
+                if (!Number.isNaN(wx) && !Number.isNaN(wy) && !Number.isNaN(wz)) {
+                    const ccx = worldToChunk(Math.floor(wx), CHUNK_SIZE);
+                    const ccz = worldToChunk(Math.floor(wz), CHUNK_SIZE);
+                    if (ccx === cx && ccz === cz) {
+                        const v = cursor.value as BlockDelta;
+                        out.push({ wx, wy, wz, t: v.t as BlockType });
+                    }
+                }
+            }
         }
-      }
-      cursor = await cursor.continue();
+        cursor = await cursor.continue();
     }
+
     return out;
-  }
+ }
 
   async clearAll() {
     const db = await getDb();
