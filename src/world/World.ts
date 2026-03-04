@@ -8,6 +8,8 @@ import { CHUNK_SIZE, RENDER_DISTANCE, WORLD_HEIGHT, SHADOW_LAYER } from '../util
 import { ChestManager } from './ChestManager';
 import { StructureTypeName, StructureLocation } from './StructureGenerator';
 import { chunkKey, worldToChunk } from '../utils/math';
+import { WorldSave } from './WorldSave';
+import { worldSeed } from '../utils/noise';
 
 export class World {
   readonly scene: THREE.Scene;
@@ -20,6 +22,7 @@ export class World {
   private terrainMaterial!: THREE.Material;
   private waterMaterial!: THREE.Material;
   renderDistance: number = RENDER_DISTANCE;
+  private readonly save: WorldSave;
 
   constructor(scene: THREE.Scene, terrainMaterial: THREE.Material, waterMaterial: THREE.Material, atlas: TextureAtlas, chestManager?: ChestManager) {
     this.scene = scene;
@@ -29,6 +32,7 @@ export class World {
     this.generator = new WorldGenerator(chestManager);
     this.mesher = new ChunkMesher(this.atlas);
     this.mesher.setBiomeSystem(this.generator.biomeSystem);
+    this.save = new WorldSave(worldSeed);
   }
 
   private readonly MAX_CHUNKS_GEN_PER_FRAME = 2;
@@ -49,7 +53,20 @@ export class World {
           if (!this.chunks.has(key)) {
             const chunk = new Chunk(cx, cz);
             this.generator.generateChunk(chunk);
+
+            // ✅ IMPORTANT : on enregistre le chunk AVANT d'appliquer les deltas
             this.chunks.set(key, chunk);
+
+            // Apply saved deltas for this chunk (async)
+            this.save.getChunkDeltas(cx, cz)
+              .then((deltas) => {
+                for (const d of deltas) {
+                  this.setBlock(d.wx, d.wy, d.wz, d.t);
+                }
+                this.markDirty(cx, cz); // force remesh
+              })
+              .catch(console.error);
+
             generated++;
             if (generated >= this.MAX_CHUNKS_GEN_PER_FRAME) break;
           }
@@ -92,7 +109,17 @@ export class World {
         if (!this.chunks.has(key)) {
           const chunk = new Chunk(cx, cz);
           this.generator.generateChunk(chunk);
+
           this.chunks.set(key, chunk);
+
+          this.save.getChunkDeltas(cx, cz)
+            .then((deltas) => {
+              for (const d of deltas) {
+                this.setBlock(d.wx, d.wy, d.wz, d.t);
+              }
+              this.markDirty(cx, cz);
+            })
+            .catch(console.error);
         }
       }
     }
@@ -149,6 +176,7 @@ export class World {
     const lx = ((fwx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     const lz = ((fwz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     chunk.setBlock(lx, fwy, lz, type);
+    this.save.setBlock(fwx, fwy, fwz, type).catch(console.error);
     if (lx === 0) this.markDirty(cx - 1, cz);
     if (lx === CHUNK_SIZE - 1) this.markDirty(cx + 1, cz);
     if (lz === 0) this.markDirty(cx, cz - 1);
