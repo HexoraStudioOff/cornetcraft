@@ -36,6 +36,7 @@ import { ProceduralMusic } from '../audio/ProceduralMusic';
 import { XPSystem } from '../ui/XPSystem';
 import { Minimap } from '../ui/Minimap';
 import { OptionsMenu, GameSettings } from '../ui/OptionsMenu';
+import { PlayerSave } from '../player/PlayerSave';
 
 type GameState = 'start' | 'playing' | 'inventory' | 'paused' | 'dead';
 
@@ -79,6 +80,10 @@ export class Engine {
   private readonly xpSystem: XPSystem;
   private readonly minimap: Minimap;
   private readonly optionsMenu: OptionsMenu;
+
+  // Inventory save (per seed = per world)
+  private readonly playerSave: PlayerSave;
+  private invSaveTimer: number | null = null;
 
   // Spawn point
   private spawnX: number = 0;
@@ -167,12 +172,38 @@ export class Engine {
     // Inventory system
     this.inventory = new InventorySystem();
 
-    // Give some starting items (torch first so it's in slot 0 = selected)
-    this.inventory.addItem(ItemType.TORCH, 16);
-    this.inventory.addItem(ItemType.WOOD, 16);
-    this.inventory.addItem(ItemType.STONE, 16);
-    this.inventory.addItem(ItemType.DIRT, 32);
-    this.inventory.addItem(ItemType.PLANKS, 8);
+    // Inventory save (1 world/seed = 1 inventory)
+    this.playerSave = new PlayerSave(worldSeed);
+
+    // Load saved inventory (async)
+    this.playerSave.loadInventory()
+      .then((snap) => {
+        if (snap) {
+          this.inventory.importSnapshot(snap);
+        }
+      })
+      .catch(console.error);
+
+    // Autosave every 2 seconds
+    this.invSaveTimer = window.setInterval(() => {
+      this.playerSave.saveInventory(this.inventory.exportSnapshot()).catch(console.error);
+    }, 2000);
+
+    // Save on refresh/close
+    window.addEventListener('beforeunload', () => {
+      this.playerSave.saveInventory(this.inventory.exportSnapshot()).catch(() => {});
+    });
+
+    // Give starting items ONLY if inventory is empty (first-time / no save)
+    const isEmpty = this.inventory.hotbar.every((s) => !s) && this.inventory.mainInventory.every((s) => !s);
+    if (isEmpty) {
+      // torch first so it's in slot 0 = selected
+      this.inventory.addItem(ItemType.TORCH, 16);
+      this.inventory.addItem(ItemType.WOOD, 16);
+      this.inventory.addItem(ItemType.STONE, 16);
+      this.inventory.addItem(ItemType.DIRT, 32);
+      this.inventory.addItem(ItemType.PLANKS, 8);
+    }
 
     // Block interaction
     this.blockInteraction = new BlockInteraction(this.world, this.player, this.scene, this.inventory);

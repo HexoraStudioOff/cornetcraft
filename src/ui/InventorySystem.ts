@@ -6,6 +6,15 @@ export interface ItemStack {
   count: number;
 }
 
+export type InventorySnapshotV1 = {
+  v: 1;
+  hotbar: (ItemStack | null)[];
+  main: (ItemStack | null)[];
+  craftingGrid: (ItemStack | null)[];
+  craftingGridSize: number;
+  cursorStack: ItemStack | null;
+};
+
 export class InventorySystem {
   readonly hotbar: (ItemStack | null)[];
   readonly mainInventory: (ItemStack | null)[];
@@ -232,7 +241,7 @@ export class InventorySystem {
 
   /** Recalculate crafting result based on current grid */
   updateCraftingResult(): void {
-    const gridItems = this.craftingGrid.map(s => s?.itemType ?? null);
+    const gridItems = this.craftingGrid.map((s) => s?.itemType ?? null);
     const recipe = findMatchingRecipe(gridItems, this.craftingGridSize);
     if (recipe) {
       this.craftingResult = { itemType: recipe.result.item, count: recipe.result.count };
@@ -356,5 +365,51 @@ export class InventorySystem {
     const def = ITEM_DEFINITIONS[stack.itemType];
     if (!def?.toolEffective) return false;
     return def.toolEffective.includes(blockType);
+  }
+
+  // ============================================================
+  // SAVE / LOAD helpers (InventorySnapshotV1)
+  // ============================================================
+
+  /** Export inventory state for saving (deep copy) */
+  exportSnapshot(): InventorySnapshotV1 {
+    const cloneSlot = (s: ItemStack | null) => (s ? { itemType: s.itemType, count: s.count } : null);
+
+    return {
+      v: 1,
+      hotbar: this.hotbar.map(cloneSlot),
+      main: this.mainInventory.map(cloneSlot),
+      craftingGrid: this.craftingGrid.map(cloneSlot),
+      craftingGridSize: this.craftingGridSize,
+      cursorStack: cloneSlot(this.cursorStack),
+    };
+  }
+
+  /** Apply saved inventory state */
+  importSnapshot(s: InventorySnapshotV1): void {
+    const safeSlot = (x: any): ItemStack | null => {
+      if (!x) return null;
+      if (typeof x.itemType !== 'number') return null;
+      if (typeof x.count !== 'number') return null;
+      return { itemType: x.itemType as ItemType, count: x.count as number };
+    };
+
+    // reset hotbar / inv
+    for (let i = 0; i < this.hotbar.length; i++) this.hotbar[i] = null;
+    for (let i = 0; i < this.mainInventory.length; i++) this.mainInventory[i] = null;
+
+    // apply
+    for (let i = 0; i < 9; i++) this.hotbar[i] = safeSlot(s.hotbar?.[i]);
+    for (let i = 0; i < 27; i++) this.mainInventory[i] = safeSlot(s.main?.[i]);
+
+    // crafting
+    this.craftingGridSize = s.craftingGridSize === 3 ? 3 : 2;
+    this.craftingGrid = new Array(this.craftingGridSize * this.craftingGridSize).fill(null);
+    for (let i = 0; i < this.craftingGrid.length; i++) {
+      this.craftingGrid[i] = safeSlot(s.craftingGrid?.[i]);
+    }
+
+    this.cursorStack = safeSlot(s.cursorStack);
+    this.updateCraftingResult();
   }
 }
